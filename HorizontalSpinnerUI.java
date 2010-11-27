@@ -20,23 +20,45 @@ import javax.swing.border.CompoundBorder;
 import javax.swing.plaf.basic.BasicArrowButton;
 import javax.swing.plaf.basic.BasicSpinnerUI;
 
-
-
-// Tweaked setBounds() and getPreferredSize()
-// Copied HandlerLayoutManager from private class BasicUIManager.Handler
-// Made HandlerLayoutManager an inner class for access to buttons
-
-// It works fine without, but if you want to maintain consistency with orientation
-// changing at runtime, override mySpinner.setComponentOrientation and
-// mySpinner.applyComponentOrientation
-// to call initButtonListeners() when the component orientation changes, if ever:
-// See end of the file for example.
+/*
+ * This class shows a horizontal arrangement of JSpinner.
+ * East and West Arrow buttons pointing outward from a central editor field.
+ * To use it: call spinner.setUI(new HorizontalSpinnerUI());
+ * I use it on a custom SpinnerMenuItem.
+ * Like the default JSpinner editor field, it respects the current
+ * java.awt.ComponentOrientation.
+ * It does so by adding and removing next and previous
+ * listeners to the arrow buttons as appropriate:
+ * <previous|editor|next> in a LeftToRight ComponentOrientation.
+ * <next|editor|previous> in a RightToLeft ComponentOrientation.
+ * There is no listener set up for runtime orientation changes, but you can add
+ * that or override mySpinner.setComponentOrientation() and
+ * mySpinner.applyComponentOrientation() to call initButtonListeners()
+ * when the component orientation changes, if ever:
+ * See end of the file for EXAMPLES.
+ * This could be 2 configuration arguments to BasicSpinnerUI, eg. ctor. Default:
+ * BasicSpinnerUI bui = new BasicSpinnerUI(
+ * BasicSpinnerUI.BUTTONS_TOGETHER, BasicSpinnerUI.BUTTON_AXIS_VERTICAL)
+ *
+ * Implementation steps:
+ * Copied createTheArrowButton() from BasicSpinnerUI and changed it since private.
+ * Override one method upstream to call it instead of super: installUI().
+ * Also override installUI() to call initButtonListeners() after installKeyboardActions()
+ * That in turn tells which listeners to install on which button:
+ * In override of installPreviousButtonListeners and installNextButtonListeners,
+ * added hack to first remove listeners then call to super for install.
+ * Copied HandlerLayoutManager from another private class BasicUIManager.Handler
+ * Made HandlerLayoutManager an inner class for access to eastButton and westButton.
+ * Tweaked layoutContainer(), setBounds(), and getPreferredSize().
+ * Untested add of putting increment and decrement to the spinner actionMap.
+ */
 public class HorizontalSpinnerUI extends BasicSpinnerUI{
 
-    Component westButton;
-    Component eastButton;
+    private Component westButton;
+    private Component eastButton;
     protected static final Dimension zeroSize = new Dimension(0,0);
-    
+    static final String BASIC_SPINNERUI_LISTENER_NAME =
+            "javax.swing.plaf.basic.BasicSpinnerUI$ArrowButtonHandler";
     @Override
     public void installUI(JComponent c) {
 	this.spinner = (JSpinner)c;
@@ -49,7 +71,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
         eastButton  =
                 createTheArrowButton(SwingConstants.EAST, "East");
 	spinner.add(eastButton);
-        // last item in installKeyboardActions() sets action map, hard to access it
+        // last item in installKeyboardActions() sets action map
         installKeyboardActions();
 
         // Remove default Handler listener and install anew.
@@ -91,7 +113,26 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
         }
         }
     }
-    
+
+    protected boolean isBasicSpinnerUIListener(Object listener){
+        boolean handler = false;
+        Class basicSpinnerClass = javax.swing.plaf.basic.BasicSpinnerUI.class;
+        if (listener != null ){
+             try{
+                 if(listener.getClass().getEnclosingClass().equals(basicSpinnerClass) &&
+                    listener.getClass().getDeclaringClass().equals(basicSpinnerClass) &&
+                    listener.getClass().isMemberClass() &&
+                    listener.getClass().getName().equals(
+                            HorizontalSpinnerUI.BASIC_SPINNERUI_LISTENER_NAME)){
+                        handler = true;
+                 }
+             }catch(NullPointerException npe){
+                 //@todo: getting some nulls, investigate why.
+                System.out.println("isBasicSpinnerUIListener() got null pointer");
+             }
+        }
+        return handler;
+    }
     @Override
     protected void installPreviousButtonListeners(Component c) {
         uninstallArrowButtonListeners(c);
@@ -102,13 +143,13 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
             ActionListener[] actionListeners = ((JButton)c).getActionListeners();
             for(int a=0;a<actionListeners.length;a++){
                 // Hack
-                if (actionListeners[a].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                if (isBasicSpinnerUIListener(actionListeners[a])){
                     spinner.getActionMap().put("decrement", (AbstractAction)actionListeners[a]);
                 }
             }
-        } 
+        }
     }
-    
+
     @Override
     protected void installNextButtonListeners(Component c) {
         uninstallArrowButtonListeners(c);
@@ -119,7 +160,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
             ActionListener[] actionListeners = ((JButton)c).getActionListeners();
             for(int a=0;a<actionListeners.length;a++){
                 // Hack
-                if (actionListeners[a].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                if (isBasicSpinnerUIListener(actionListeners[a])){
                     spinner.getActionMap().put("increment", (AbstractAction)actionListeners[a]);
                 }
             }
@@ -131,7 +172,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
             MouseListener[] mouseListeners = c.getMouseListeners();
             for(int m=0;m<mouseListeners.length;m++){
                 // Hack
-                if (mouseListeners[m].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                if (isBasicSpinnerUIListener(mouseListeners[m])){
                     c.removeMouseListener(mouseListeners[m]);
                 }
             }
@@ -139,7 +180,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
                 ActionListener[] actionListeners = ((JButton)c).getActionListeners();
                 for(int a=0;a<actionListeners.length;a++){
                     // Hack
-                    if (actionListeners[a].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                    if (isBasicSpinnerUIListener(actionListeners[a])){
                         ((JButton)c).removeActionListener(actionListeners[a]);
                     }
                 }
@@ -212,11 +253,11 @@ class HandlerLayoutManager implements LayoutManager{
 	    Dimension previousD = preferredSize(westButton);
 	    int buttonWidth = Math.max(nextD.width, previousD.width);
 	    int editorHeight = height - (insets.top + insets.bottom);
-	    // The arrowButtonInsets value is used instead of the JSpinner's
+	    // "The arrowButtonInsets value is used instead of the JSpinner's
 	    // insets if not null. Defining this to be (0, 0, 0, 0) causes the
 	    // buttons to be aligned with the outer edge of the spinner's
 	    // border, and leaving it as "null" places the buttons completely
-	    // inside the spinner's border.
+	    // inside the spinner's border." -Swing team BasicSpinnerUI committer.
 	    Insets buttonInsets = UIManager.getInsets("Spinner.arrowButtonInsets");
 	    if (buttonInsets == null) {
 		buttonInsets = insets;
@@ -265,8 +306,25 @@ class HandlerLayoutManager implements LayoutManager{
     }
 }
 
-/*
- *    class MyJSpinner extends JSpinner{
+/*    EXAMPLES:
+ *  // This shows setting the ui after creating the jspinner.
+ *  // Also shows the extra manipulation to get the editor to be a certain size.
+ *  public SpinnerMenuItem(String labelStr, int initialValue){
+        super();
+        spinner.setValue(new Integer(100)); //sets the amount of space for the textfield
+        spinner.addChangeListener(this);
+        add(spinner);
+        spinner.getEditor().setPreferredSize(spinner.getEditor().getPreferredSize());
+        spinner.setValue(new Integer(initialValue));
+        super.setText(labelStr);
+        spinner.setUI(new HorizontalSpinnerUI());
+    }
+ *
+ *
+ *
+ *  // This would be one way to propagate orientation by overriding methods.
+ *  // Or call ((HorizontalSpinnerUI) super.getUI()).initButtonListeners() yourself
+ *  class MyJSpinner extends JSpinner{
 
         @Override
         public void setComponentOrientation(ComponentOrientation o){

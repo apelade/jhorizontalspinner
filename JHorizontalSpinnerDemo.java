@@ -1,6 +1,4 @@
-package horizontalSpinner;
-
-
+// package declaration
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;

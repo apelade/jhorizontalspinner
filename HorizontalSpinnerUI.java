@@ -8,6 +8,7 @@ import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseListener;
+import javax.swing.AbstractAction;
 import javax.swing.DefaultListCellRenderer.UIResource;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -20,10 +21,16 @@ import javax.swing.plaf.basic.BasicArrowButton;
 import javax.swing.plaf.basic.BasicSpinnerUI;
 
 
-// Copied from private class BasicUIManager.Handler
-// tweaked setBounds() and getPreferredSize()
+
+// Tweaked setBounds() and getPreferredSize()
+// Copied HandlerLayoutManager from private class BasicUIManager.Handler
 // Made HandlerLayoutManager an inner class for access to buttons
-// Could add componentOrientation change listener to the spinner.
+
+// It works fine without, but if you want to maintain consistency with orientation
+// changing at runtime, override mySpinner.setComponentOrientation and
+// mySpinner.applyComponentOrientation
+// to call initButtonListeners() when the component orientation changes, if ever:
+// See end of the file for example.
 public class HorizontalSpinnerUI extends BasicSpinnerUI{
 
     Component westButton;
@@ -44,6 +51,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
 	spinner.add(eastButton);
         // last item in installKeyboardActions() sets action map, hard to access it
         installKeyboardActions();
+
         // Remove default Handler listener and install anew.
         initButtonListeners();
     }
@@ -69,7 +77,8 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
       return handlerLayout;
     }
 
-    // @todo: call this when the component orientation changes
+
+
     public void initButtonListeners(){
         ComponentOrientation orient = this.spinner.getComponentOrientation();
         if(orient.equals(ComponentOrientation.UNKNOWN) ||
@@ -88,6 +97,16 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
         uninstallArrowButtonListeners(c);
         c.setName("Spinner.previousButton");
         super.installPreviousButtonListeners(c);
+        //untested - may be needed if app is using spinner's action map
+        if (c instanceof JButton) {
+            ActionListener[] actionListeners = ((JButton)c).getActionListeners();
+            for(int a=0;a<actionListeners.length;a++){
+                // Hack
+                if (actionListeners[a].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                    spinner.getActionMap().put("decrement", (AbstractAction)actionListeners[a]);
+                }
+            }
+        } 
     }
     
     @Override
@@ -95,6 +114,16 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
         uninstallArrowButtonListeners(c);
         c.setName("Spinner.nextButton");
         super.installNextButtonListeners(c);
+        //untested - may be needed if app is using spinners action map
+        if (c instanceof JButton) {
+            ActionListener[] actionListeners = ((JButton)c).getActionListeners();
+            for(int a=0;a<actionListeners.length;a++){
+                // Hack
+                if (actionListeners[a].getClass().toString().indexOf("ArrowButtonHandler") >-1){
+                    spinner.getActionMap().put("increment", (AbstractAction)actionListeners[a]);
+                }
+            }
+        }
     }
 
     protected void uninstallArrowButtonListeners(Component c){
@@ -121,6 +150,7 @@ public class HorizontalSpinnerUI extends BasicSpinnerUI{
 class HandlerLayoutManager implements LayoutManager{
 	private Component editor = null;
 
+        // The buttons do not change, we only switch their listeners
 	public void addLayoutComponent(String name, Component c) {
 	    if ("East".equals(name)) {
 		eastButton = c;
@@ -235,4 +265,24 @@ class HandlerLayoutManager implements LayoutManager{
     }
 }
 
+/*
+ *    class MyJSpinner extends JSpinner{
 
+        @Override
+        public void setComponentOrientation(ComponentOrientation o){
+            System.out.println("setComponentOrientation ");
+            super.setComponentOrientation(o);
+            if( super.getUI() instanceof HorizontalSpinnerUI){
+                ((HorizontalSpinnerUI) super.getUI()).initButtonListeners();
+            }
+        }
+        @Override
+        public void applyComponentOrientation(ComponentOrientation o){
+            System.out.println("applyComponentOrientation ");
+            super.applyComponentOrientation( o);
+            if( super.getUI() instanceof HorizontalSpinnerUI){
+                ((HorizontalSpinnerUI) super.getUI()).initButtonListeners();
+            }
+        }
+    }
+ */
